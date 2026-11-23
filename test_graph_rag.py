@@ -75,6 +75,27 @@ def test_fuzzy_entity_resolution():
     assert len(results_fuzzy) > 0
     assert results_fuzzy[0].id == "ent_kafka"
 
+    # Fuzzy match when another word hits inverted_index via entity_type/description
+    store.add_entity(Entity(id="ent_redis", name="Redis", entity_type="Datastore", description="In-memory datastore"))
+    results_mixed = store.search_entities("apche kafk datastore", threshold=0.5)
+    assert any(e.id == "ent_kafka" for e in results_mixed)
+
+
+def test_max_nodes_consistency_in_traverse_subgraph():
+    store = KnowledgeGraphStore()
+    for i in range(6):
+        store.add_entity(Entity(id=f"N{i}", name=f"Node {i}", entity_type="T"))
+    for i in range(1, 6):
+        store.add_triple(RelationTriple(subject="N0", predicate="links", object=f"N{i}", weight=float(i)))
+
+    nodes, triples, paths = store.traverse_subgraph(["N0"], k_hops=2, max_nodes=3)
+    node_ids = {n.id for n in nodes}
+    assert len(node_ids) == 3
+    for t in triples:
+        assert t.subject in node_ids and t.object in node_ids
+    for p in paths:
+        assert all(nid in node_ids for nid in p.nodes)
+
 
 def test_bidirectional_subgraph_traversal():
     store = KnowledgeGraphStore()

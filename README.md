@@ -52,11 +52,11 @@ A high-performance local Graph RAG engine featuring entity-relation extraction, 
 ## CLI Usage
 
 ```bash
-python projects/graph_rag_subgraph_retriever/main.py --query "How does Kubernetes persist state and consensus?" --k-hops 2
+python main.py --query "How does Kubernetes persist state and consensus?" --k-hops 2
 ```
 
 ## Running Tests
 
 ```bash
-pytest projects/graph_rag_subgraph_retriever
+pytest -v
 ```

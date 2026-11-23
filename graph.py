@@ -57,20 +57,13 @@ class KnowledgeGraphStore:
     def search_entities(self, query: str, threshold: float = 0.5, limit: int = 5) -> list[Entity]:
         """Performs token-based inverted index and fuzzy entity resolution."""
         query_tokens = set(_tokenize(query))
-        candidate_ids: set[str] = set()
-
-        for token in query_tokens:
-            if token in self.inverted_index:
-                candidate_ids.update(self.inverted_index[token])
-
         scored: list[tuple[float, Entity]] = []
-        pool_ids = candidate_ids if candidate_ids else set(self.entities.keys())
 
-        for ent_id in pool_ids:
-            ent = self.entities[ent_id]
+        for ent_id, ent in self.entities.items():
             ent_name_tokens = set(_tokenize(ent.name))
             ent_id_tokens = set(_tokenize(ent.id))
             all_ent_tokens = ent_name_tokens | ent_id_tokens
+            meta_tokens = set(_tokenize(ent.entity_type)) | set(_tokenize(ent.description))
 
             # Exact token containment of entity name in query
             if ent_name_tokens and ent_name_tokens.issubset(query_tokens):
@@ -80,15 +73,21 @@ class KnowledgeGraphStore:
             else:
                 name_containment = 0.0
 
+            meta_overlap = (len(query_tokens & meta_tokens) / max(1, len(query_tokens))) * 0.6 if meta_tokens else 0.0
+
             # Fuzzy match across words in query
             best_fuzzy = 0.0
             for q_tok in query_tokens:
+                if len(q_tok) < 3:
+                    continue
                 for e_tok in all_ent_tokens:
+                    if len(e_tok) < 3:
+                        continue
                     ratio = difflib.SequenceMatcher(None, q_tok, e_tok).ratio()
                     if ratio > best_fuzzy:
                         best_fuzzy = ratio
 
-            score = max(name_containment, best_fuzzy)
+            score = max(name_containment, best_fuzzy, meta_overlap)
             if score >= threshold:
                 scored.append((score, ent))
 
@@ -102,7 +101,11 @@ class KnowledgeGraphStore:
         max_nodes: int = 20,
     ) -> tuple[list[Entity], list[RelationTriple], list[SubgraphPath]]:
         """Bidirectional k-hop BFS expansion with edge weighting and cycle suppression."""
-        visited_nodes: set[str] = set(seed_ids)
+        visited_nodes: set[str] = set()
+        for sid in seed_ids:
+            if sid in self.entities and len(visited_nodes) < max_nodes:
+                visited_nodes.add(sid)
+
         collected_triples: list[RelationTriple] = []
         seen_triple_keys: set[tuple[str, str, str]] = set()
         paths: list[SubgraphPath] = []
@@ -110,10 +113,10 @@ class KnowledgeGraphStore:
         # Queue contains: (current_node_id, current_hop, path_nodes, path_edges, path_weight)
         queue: deque[tuple[str, int, list[str], list[RelationTriple], float]] = deque()
         for seed_id in seed_ids:
-            if seed_id in self.entities:
+            if seed_id in visited_nodes:
                 queue.append((seed_id, 0, [seed_id], [], 0.0))
 
-        while queue and len(visited_nodes) < max_nodes:
+        while queue:
             curr_id, hop, path_nodes, path_edges, path_weight = queue.popleft()
 
             if hop >= k_hops:
@@ -131,6 +134,13 @@ class KnowledgeGraphStore:
                 candidates.append((t.subject, t))
 
             for neighbor_id, triple in candidates:
+                is_new = neighbor_id not in visited_nodes
+                if is_new and len(visited_nodes) >= max_nodes:
+                    continue
+
+                if is_new:
+                    visited_nodes.add(neighbor_id)
+
                 triple_key = (triple.subject, triple.predicate, triple.object)
                 if triple_key not in seen_triple_keys:
                     seen_triple_keys.add(triple_key)
@@ -148,8 +158,7 @@ class KnowledgeGraphStore:
                     )
                 )
 
-                if neighbor_id not in visited_nodes and len(visited_nodes) < max_nodes:
-                    visited_nodes.add(neighbor_id)
+                if is_new:
                     queue.append((neighbor_id, hop + 1, new_path_nodes, new_path_edges, new_path_weight))
 
         traversed_entities = [self.entities[nid] for nid in visited_nodes if nid in self.entities]
