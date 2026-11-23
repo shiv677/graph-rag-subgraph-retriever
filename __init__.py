@@ -1,11 +1,7 @@
 """Graph RAG Subgraph Retriever."""
-from .models import Entity, RelationTriple, SubgraphPath, RetrievalContext
-from .graph import KnowledgeGraphStore
-
-__all__ = [
-    "Entity",
-    "RelationTriple",
-    "SubgraphPath",
-    "RetrievalContext",
-    "KnowledgeGraphStore",
-]
+try:
+    from .models import Entity, RelationTriple, SubgraphPath, RetrievalContext
+    from .graph import KnowledgeGraphStore
+except (ImportError, ValueError):
+    from models import Entity, RelationTriple, SubgraphPath, RetrievalContext
+    from graph import KnowledgeGraphStore
